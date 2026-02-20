@@ -793,6 +793,7 @@ def html_page() -> str:
     .chip.unknown {{ color: var(--unknown); }}
     .track {{ margin-top: 16px; }}
     .track h2 {{ margin: 0 0 8px; font-size: 1.1rem; }}
+    .table-wrap {{ overflow-x: auto; -webkit-overflow-scrolling: touch; }}
     table {{ width: 100%; border-collapse: collapse; background: #fff; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; font-size: 0.92rem; }}
     th {{ background: #f5f9fc; }}
@@ -801,7 +802,34 @@ def html_page() -> str:
     .s-unknown {{ color: var(--unknown); font-weight: 700; }}
     @media (max-width: 780px) {{
       .wrap {{ padding: 10px; }}
-      th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8), th:nth-child(9), td:nth-child(9), th:nth-child(10), td:nth-child(10) {{ display: none; }}
+      .controls {{ display: grid; grid-template-columns: 1fr; gap: 8px; }}
+      .controls select, .controls button {{ width: 100%; }}
+      .table-wrap {{ overflow: visible; }}
+      table, tbody, tr, td {{ display: block; width: 100%; }}
+      thead {{ display: none; }}
+      tr {{
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 10px;
+        margin-bottom: 10px;
+        background: #fff;
+      }}
+      td {{
+        border-bottom: 1px dashed var(--line);
+        padding: 7px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        text-align: right;
+      }}
+      td::before {{
+        content: attr(data-label);
+        color: var(--muted);
+        font-weight: 600;
+        text-align: left;
+      }}
+      td:last-child {{ border-bottom: none; }}
     }}
   </style>
 </head>
@@ -874,7 +902,7 @@ async function loadForecast() {{
 
     let html = '';
     for (const track of data.tracks) {{
-      html += `<div class="panel track"><h2>${{track.name}}</h2><table><thead><tr>` +
+      html += `<div class="panel track"><h2>${{track.name}}</h2><div class="table-wrap"><table><thead><tr>` +
               `<th>Station</th><th>Open-Meteo (degC)</th><th>Yr (degC)</th><th>Used min (degC)</th><th>Snow chance (%)</th><th>Status</th><th>Latitude</th><th>Longitude</th><th>Altitude (m)</th><th>Note</th>` +
               `</tr></thead><tbody>`;
       for (const s of track.stations) {{
@@ -886,10 +914,10 @@ async function loadForecast() {{
         const lat = s.lat === null ? '' : s.lat.toFixed(5);
         const lon = s.lon === null ? '' : s.lon.toFixed(5);
         const elev = s.elevation_m === null ? '' : Math.round(s.elevation_m).toString();
-        html += `<tr><td>${{s.name}}</td><td>${{tOm}}</td><td>${{tYr}}</td><td>${{tUsed}}</td><td>${{snow}}</td><td class="${{cls}}">${{s.status}}</td>` +
-                `<td>${{lat}}</td><td>${{lon}}</td><td>${{elev}}</td><td>${{s.note || ''}}</td></tr>`;
+        html += `<tr><td data-label="Station">${{s.name}}</td><td data-label="Open-Meteo">${{tOm}}</td><td data-label="Yr">${{tYr}}</td><td data-label="Used min">${{tUsed}}</td><td data-label="Snow chance">${{snow}}</td><td data-label="Status" class="${{cls}}">${{s.status}}</td>` +
+                `<td data-label="Latitude">${{lat}}</td><td data-label="Longitude">${{lon}}</td><td data-label="Altitude">${{elev}}</td><td data-label="Note">${{s.note || ''}}</td></tr>`;
       }}
-      html += `</tbody></table></div>`;
+      html += `</tbody></table></div></div>`;
     }}
     tracksEl.innerHTML = html;
   }} catch (err) {{
