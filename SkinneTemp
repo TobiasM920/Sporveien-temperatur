@@ -61,9 +61,7 @@ else:
 
 SCRIPT_PATH = Path(__file__).resolve()
 SCRIPT_DIR = SCRIPT_PATH.parent
-DEFAULT_XLSX = Path(
-    r"c:\Users\TobiasMagnus\OneDrive - Axess AS\Skrivebord\Sporveien Master Document\200 Technical\Sporveien_inspeksjonsoversikt.xlsx"
-)
+DEFAULT_XLSX = SCRIPT_DIR / "SPORVEIEN_XLSX.xlsx"
 CACHE_FILE = SCRIPT_DIR / "station_geocode_cache.json"
 GEOCODE_CACHE_VERSION = 2
 
@@ -970,13 +968,15 @@ def main() -> int:
     parser.add_argument(
         "--xlsx",
         default=os.environ.get("SPORVEIEN_XLSX", str(DEFAULT_XLSX)),
-        help="Path to Sporveien_inspeksjonsoversikt.xlsx",
+        help="Path to station Excel file (default: SPORVEIEN_XLSX.xlsx in script folder)",
     )
     args = parser.parse_args()
 
     xlsx_path = Path(args.xlsx).expanduser().resolve()
     if not xlsx_path.exists():
         print(f"Excel file not found: {xlsx_path}")
+        print(f"Expected default location: {DEFAULT_XLSX}")
+        print("You can override with --xlsx <path> or SPORVEIEN_XLSX environment variable.")
         return 1
 
     try:
