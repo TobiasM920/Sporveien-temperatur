@@ -1,0 +1,1003 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import math
+import os
+import re
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+import xml.etree.ElementTree as ET
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
+THRESHOLD_C = -5.0
+MAX_NIGHT_OFFSET = 7
+OSLO_CENTER = (59.9139, 10.7522)
+OPEN_METEO_SOURCE = {
+    "name": "Open-Meteo Forecast API",
+    "url": "https://api.open-meteo.com/v1/forecast",
+    "field": "hourly.temperature_2m",
+    "units": "degC",
+}
+YR_SOURCE = {
+    "name": "Yr / MET Norway Locationforecast",
+    "url": "https://api.met.no/weatherapi/locationforecast/2.0/compact",
+    "field": "properties.timeseries[].data.instant.details.air_temperature",
+    "units": "degC",
+}
+FORECAST_SOURCES = {"open_meteo": OPEN_METEO_SOURCE, "yr": YR_SOURCE}
+ALTITUDE_SOURCE = {
+    "name": "Open-Meteo Elevation API",
+    "url": "https://api.open-meteo.com/v1/elevation",
+    "field": "elevation",
+    "units": "m",
+}
+SNOW_WEATHER_CODES = {71, 73, 75, 77, 85, 86}
+SNOW_SYMBOL_KEYWORDS = ("snow", "sleet")
+DEFAULT_HEADERS = {"User-Agent": "SkinneTemp/1.0 (Sporveien dashboard)"}
+ENTUR_HEADERS = {"ET-Client-Name": "SkinneTemp", **DEFAULT_HEADERS}
+YR_HEADERS = DEFAULT_HEADERS
+if ZoneInfo is not None:
+    try:
+        OSLO_TZ = ZoneInfo("Europe/Oslo")
+    except Exception:
+        OSLO_TZ = dt.datetime.now().astimezone().tzinfo or dt.timezone.utc
+else:
+    OSLO_TZ = dt.datetime.now().astimezone().tzinfo or dt.timezone.utc
+
+SCRIPT_PATH = Path(__file__).resolve()
+SCRIPT_DIR = SCRIPT_PATH.parent
+DEFAULT_XLSX = Path(
+    r"c:\Users\TobiasMagnus\OneDrive - Axess AS\Skrivebord\Sporveien Master Document\200 Technical\Sporveien_inspeksjonsoversikt.xlsx"
+)
+CACHE_FILE = SCRIPT_DIR / "station_geocode_cache.json"
+GEOCODE_CACHE_VERSION = 2
+
+NS_MAIN = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+CODE_PATTERN = re.compile(r"^[A-ZÆØÅ]\d{3,6}(?:/[A-ZÆØÅ]\d{3,6})?$")
+
+
+@dataclass
+class Station:
+    name: str
+    lat: float | None = None
+    lon: float | None = None
+    elevation_m: float | None = None
+
+
+class DataStore:
+    def __init__(self, xlsx_path: Path):
+        self.xlsx_path = xlsx_path
+        self.tracks: dict[str, list[Station]] = {}
+        self.geocode_cache: dict[str, dict[str, Any]] = {}
+        self.lock = threading.Lock()
+        self._load_tracks()
+        self._load_cache()
+        self._ensure_coordinates()
+        self._save_cache()
+
+    def _load_tracks(self) -> None:
+        tracks: dict[str, list[Station]] = {}
+        with zipfile.ZipFile(self.xlsx_path, "r") as zf:
+            shared_strings = self._read_shared_strings(zf)
+            sheet_map = self._sheet_paths(zf)
+
+            for sheet_name, sheet_path in sheet_map:
+                if sheet_name in {"OVERSIKT", "KART", "SKIFTRAPPORT"}:
+                    continue
+
+                rows = self._extract_column_a(zf, sheet_path, shared_strings)
+                stations = self._clean_station_names(rows)
+                if stations:
+                    tracks[sheet_name] = [Station(name=s) for s in stations]
+
+        if not tracks:
+            raise RuntimeError("No track/station data found in Excel.")
+
+        self.tracks = tracks
+
+    def _read_shared_strings(self, zf: zipfile.ZipFile) -> list[str]:
+        if "xl/sharedStrings.xml" not in zf.namelist():
+            return []
+
+        root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+        out: list[str] = []
+        for si in root.findall("m:si", NS_MAIN):
+            text = "".join((n.text or "") for n in si.findall(".//m:t", NS_MAIN))
+            out.append(text)
+        return out
+
+    def _sheet_paths(self, zf: zipfile.ZipFile) -> list[tuple[str, str]]:
+        wb_root = ET.fromstring(zf.read("xl/workbook.xml"))
+        rels_root = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+        rel_map = {
+            rel.attrib["Id"]: rel.attrib["Target"].replace("\\", "/")
+            for rel in rels_root.findall(f"{{{NS_PKG_REL}}}Relationship")
+        }
+        out: list[tuple[str, str]] = []
+        for sheet in wb_root.findall("m:sheets/m:sheet", NS_MAIN):
+            rid = sheet.attrib[f"{{{NS_REL}}}id"]
+            out.append((sheet.attrib["name"], f"xl/{rel_map[rid]}"))
+        return out
+
+    def _extract_column_a(
+        self, zf: zipfile.ZipFile, sheet_path: str, shared_strings: list[str]
+    ) -> list[str]:
+        root = ET.fromstring(zf.read(sheet_path))
+        rows = root.findall(".//m:sheetData/m:row", NS_MAIN)
+        out: list[str] = []
+        for row in rows:
+            row_num = int(row.attrib.get("r", "0"))
+            if row_num < 3:
+                continue
+            for cell in row.findall("m:c", NS_MAIN):
+                ref = cell.attrib.get("r", "")
+                col = "".join(ch for ch in ref if ch.isalpha())
+                if col != "A":
+                    continue
+                value = self._cell_value(cell, shared_strings)
+                if value:
+                    out.append(value.strip())
+        return out
+
+    def _cell_value(self, cell: ET.Element, shared_strings: list[str]) -> str:
+        cell_type = cell.attrib.get("t")
+        v = cell.find("m:v", NS_MAIN)
+        if cell_type == "s" and v is not None:
+            idx = int(v.text or "0")
+            return shared_strings[idx] if 0 <= idx < len(shared_strings) else ""
+        if cell_type == "inlineStr":
+            t_node = cell.find("m:is/m:t", NS_MAIN)
+            return (t_node.text or "") if t_node is not None else ""
+        return (v.text or "") if v is not None else ""
+
+    def _clean_station_names(self, names: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for name in names:
+            n = name.strip()
+            if not n or CODE_PATTERN.match(n.upper()):
+                continue
+            if n not in seen:
+                cleaned.append(n)
+                seen.add(n)
+        return cleaned
+
+    def _load_cache(self) -> None:
+        if not CACHE_FILE.exists():
+            self.geocode_cache = {}
+            return
+        try:
+            self.geocode_cache = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            self.geocode_cache = {}
+
+    def _save_cache(self) -> None:
+        try:
+            CACHE_FILE.write_text(
+                json.dumps(self.geocode_cache, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _ensure_coordinates(self) -> None:
+        station_names = sorted({s.name for stations in self.tracks.values() for s in stations})
+        to_recheck = [
+            n
+            for n in station_names
+            if n not in self.geocode_cache
+            or "lat" not in self.geocode_cache[n]
+            or "lon" not in self.geocode_cache[n]
+            or int(self.geocode_cache[n].get("geocode_version", 0)) < GEOCODE_CACHE_VERSION
+        ]
+
+        if to_recheck:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(self._geocode_station, name): name for name in to_recheck}
+                for fut in as_completed(futures):
+                    name = futures[fut]
+                    result = fut.result()
+                    if result is not None:
+                        prev = self.geocode_cache.get(name, {})
+                        new_lat, new_lon = result[0], result[1]
+                        coords_changed = (
+                            abs(float(prev.get("lat", new_lat)) - new_lat) > 1e-7
+                            or abs(float(prev.get("lon", new_lon)) - new_lon) > 1e-7
+                        )
+                        entry = dict(prev)
+                        entry["lat"] = new_lat
+                        entry["lon"] = new_lon
+                        entry["geocode_version"] = GEOCODE_CACHE_VERSION
+                        if coords_changed:
+                            entry.pop("elevation_m", None)
+                        self.geocode_cache[name] = entry
+
+        missing_elevation = [
+            n
+            for n in station_names
+            if n in self.geocode_cache
+            and "lat" in self.geocode_cache[n]
+            and "lon" in self.geocode_cache[n]
+            and "elevation_m" not in self.geocode_cache[n]
+        ]
+        if missing_elevation:
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                futures = {
+                    pool.submit(self._elevation_for_station, name): name
+                    for name in missing_elevation
+                }
+                for fut in as_completed(futures):
+                    name = futures[fut]
+                    elev = fut.result()
+                    if elev is not None:
+                        self.geocode_cache[name]["elevation_m"] = elev
+
+        for stations in self.tracks.values():
+            for station in stations:
+                geo = self.geocode_cache.get(station.name)
+                if geo:
+                    station.lat = float(geo["lat"])
+                    station.lon = float(geo["lon"])
+                    if "elevation_m" in geo and geo["elevation_m"] is not None:
+                        station.elevation_m = float(geo["elevation_m"])
+
+    def _geocode_station(self, station_name: str) -> tuple[float, float] | None:
+        entur_hit = self._geocode_from_entur(station_name)
+        if entur_hit is not None:
+            return entur_hit
+        return self._geocode_from_nominatim(station_name)
+
+    def _elevation_for_station(self, station_name: str) -> float | None:
+        geo = self.geocode_cache.get(station_name, {})
+        lat = geo.get("lat")
+        lon = geo.get("lon")
+        if lat is None or lon is None:
+            return None
+        params = {"latitude": f"{float(lat):.5f}", "longitude": f"{float(lon):.5f}"}
+        url = "https://api.open-meteo.com/v1/elevation?" + urllib.parse.urlencode(params)
+        try:
+            data = self._http_json(url, headers=DEFAULT_HEADERS, timeout=20, retries=2)
+        except Exception:
+            return None
+        values = data.get("elevation")
+        if isinstance(values, list) and values:
+            try:
+                return float(values[0])
+            except (TypeError, ValueError):
+                return None
+        try:
+            return float(values) if values is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _http_json(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: int = 20,
+        retries: int = 2,
+        backoff_seconds: float = 0.6,
+    ) -> dict[str, Any]:
+        last_exc: Exception | None = None
+        for attempt in range(retries + 1):
+            req = urllib.request.Request(url, headers=headers or DEFAULT_HEADERS)
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                last_exc = exc
+                if exc.code not in {429, 500, 502, 503, 504} or attempt == retries:
+                    raise
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+                last_exc = exc
+                if attempt == retries:
+                    raise
+            time.sleep(backoff_seconds * (attempt + 1))
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Unexpected HTTP fetch state")
+
+    def _geocode_from_entur(self, station_name: str) -> tuple[float, float] | None:
+        params = {
+            "text": station_name,
+            "size": "20",
+            "lang": "no",
+            "layers": "venue",
+        }
+        url = "https://api.entur.io/geocoder/v1/autocomplete?" + urllib.parse.urlencode(params)
+        try:
+            data = self._http_json(url, headers=ENTUR_HEADERS, timeout=15, retries=2)
+        except Exception:
+            return None
+
+        features = data.get("features", [])
+        candidates: list[tuple[float, float, float]] = []
+        station_norm = self._normalize_name(station_name)
+        for feature in features:
+            props = feature.get("properties", {})
+            geometry = feature.get("geometry", {})
+            coords = geometry.get("coordinates", [])
+            if not isinstance(coords, list) or len(coords) < 2:
+                continue
+            lon = float(coords[0])
+            lat = float(coords[1])
+
+            name_norm = self._normalize_name(str(props.get("name", "")))
+            label_norm = self._normalize_name(str(props.get("label", "")))
+            categories = [str(c).lower() for c in (props.get("category") or [])]
+            source_id = str(props.get("source_id", ""))
+            locality = str(props.get("locality", ""))
+            county = str(props.get("county", ""))
+
+            score = 0.0
+            if name_norm == station_norm and station_norm:
+                score += 80.0
+            elif station_norm and station_norm in name_norm:
+                score += 45.0
+            elif station_norm and station_norm in label_norm:
+                score += 35.0
+
+            if "metrostation" in categories:
+                score += 30.0
+            elif "railstation" in categories:
+                score += 20.0
+            elif "tramstation" in categories or "tramstop" in categories:
+                score += 10.0
+
+            if source_id.startswith("NSR:StopPlace:"):
+                score += 20.0
+            if locality in {"Oslo", "Bærum", "Baerum"}:
+                score += 8.0
+            if county in {"Oslo", "Akershus", "Bærum", "Baerum"}:
+                score += 6.0
+
+            distance_tiebreak = self._distance_to_oslo(lat, lon)
+            candidates.append((score, distance_tiebreak, lat, lon))
+
+        if not candidates:
+            return None
+        best = max(candidates, key=lambda p: (p[0], -p[1]))
+        return best[2], best[3]
+
+    def _geocode_from_nominatim(self, station_name: str) -> tuple[float, float] | None:
+        params = {
+            "q": f"{station_name}, Oslo",
+            "format": "jsonv2",
+            "countrycodes": "no",
+            "limit": "10",
+        }
+        url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(params)
+        try:
+            req = urllib.request.Request(url, headers=DEFAULT_HEADERS)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                rows = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+            return None
+
+        if not rows:
+            return None
+        candidates = [(float(r["lat"]), float(r["lon"])) for r in rows if "lat" in r and "lon" in r]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda p: self._distance_to_oslo(p[0], p[1]))
+
+    def _distance_to_oslo(self, lat: float, lon: float) -> float:
+        lat1, lon1 = OSLO_CENTER
+        dlat = math.radians(lat - lat1)
+        dlon = math.radians(lon - lon1)
+        return dlat * dlat + dlon * dlon
+
+    def _normalize_name(self, text: str) -> str:
+        t = text.casefold()
+        return "".join(ch for ch in t if ch.isalnum() or ch in "æøå")
+
+    def evaluate_night(self, offset_days: int) -> dict[str, Any]:
+        start, end = night_window(offset_days)
+        jobs: dict[str, dict[str, Any]] = {}
+
+        for track, stations in self.tracks.items():
+            for station in stations:
+                key = f"{track}:{station.name}"
+                jobs[key] = {
+                    "track": track,
+                    "name": station.name,
+                    "lat": station.lat,
+                    "lon": station.lon,
+                    "elevation_m": station.elevation_m,
+                }
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {
+                pool.submit(self._forecast_station, j["lat"], j["lon"], start, end): key
+                for key, j in jobs.items()
+            }
+            for future in as_completed(futures):
+                key = futures[future]
+                jobs[key].update(future.result())
+
+        tracks_out: dict[str, list[dict[str, Any]]] = {track: [] for track in self.tracks}
+        too_cold = 0
+        unknown = 0
+        ok = 0
+
+        for entry in jobs.values():
+            tracks_out[entry["track"]].append(
+                {
+                    "name": entry["name"],
+                    "lat": entry["lat"],
+                    "lon": entry["lon"],
+                    "elevation_m": entry.get("elevation_m"),
+                    "min_temp_c": entry.get("min_temp_c"),
+                    "min_temp_open_meteo_c": entry.get("min_temp_open_meteo_c"),
+                    "min_temp_yr_c": entry.get("min_temp_yr_c"),
+                    "snow_chance_pct": entry.get("snow_chance_pct"),
+                    "snow_chance_open_meteo_pct": entry.get("snow_chance_open_meteo_pct"),
+                    "snow_chance_yr_pct": entry.get("snow_chance_yr_pct"),
+                    "status": entry["status"],
+                    "note": entry.get("note", ""),
+                }
+            )
+            if entry["status"] == "TOO_COLD":
+                too_cold += 1
+            elif entry["status"] == "UNKNOWN":
+                unknown += 1
+            else:
+                ok += 1
+
+        for track, stations in tracks_out.items():
+            stations.sort(key=lambda s: s["name"])
+            tracks_out[track] = stations
+
+        return {
+            "threshold_c": THRESHOLD_C,
+            "night_offset_days": offset_days,
+            "night_start": start.isoformat(timespec="minutes"),
+            "night_end": end.isoformat(timespec="minutes"),
+            "night_date": start.date().isoformat(),
+            "night_options": night_options(),
+            "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
+            "forecast_source": OPEN_METEO_SOURCE,
+            "forecast_sources": FORECAST_SOURCES,
+            "altitude_source": ALTITUDE_SOURCE,
+            "summary": {"ok": ok, "too_cold": too_cold, "unknown": unknown},
+            "tracks": [{"name": t, "stations": s} for t, s in tracks_out.items()],
+        }
+
+    def _forecast_station(
+        self,
+        lat: float | None,
+        lon: float | None,
+        start: dt.datetime,
+        end: dt.datetime,
+    ) -> dict[str, Any]:
+        if lat is None or lon is None:
+            return {
+                "status": "UNKNOWN",
+                "min_temp_c": None,
+                "min_temp_open_meteo_c": None,
+                "min_temp_yr_c": None,
+                "snow_chance_pct": None,
+                "snow_chance_open_meteo_pct": None,
+                "snow_chance_yr_pct": None,
+                "note": "Missing coordinates",
+            }
+
+        om_data = self._open_meteo_night_data(lat, lon, start, end)
+        yr_data = self._yr_night_data(lat, lon, start, end)
+
+        available_temps = [v for v in (om_data["min_temp_c"], yr_data["min_temp_c"]) if v is not None]
+        if not available_temps:
+            note_parts = [n for n in (om_data["note"], yr_data["note"]) if n]
+            return {
+                "status": "UNKNOWN",
+                "min_temp_c": None,
+                "min_temp_open_meteo_c": None,
+                "min_temp_yr_c": None,
+                "snow_chance_pct": None,
+                "snow_chance_open_meteo_pct": om_data["snow_chance_pct"],
+                "snow_chance_yr_pct": yr_data["snow_chance_pct"],
+                "note": " | ".join(note_parts) if note_parts else "No source data",
+            }
+
+        min_temp = min(available_temps)
+        status = "OK" if min_temp > THRESHOLD_C else "TOO_COLD"
+        available_snow = [
+            v for v in (om_data["snow_chance_pct"], yr_data["snow_chance_pct"]) if v is not None
+        ]
+        snow_chance = max(available_snow) if available_snow else None
+        note_parts = [n for n in (om_data["note"], yr_data["note"]) if n]
+        return {
+            "status": status,
+            "min_temp_c": round(min_temp, 1),
+            "min_temp_open_meteo_c": round(om_data["min_temp_c"], 1)
+            if om_data["min_temp_c"] is not None
+            else None,
+            "min_temp_yr_c": round(yr_data["min_temp_c"], 1)
+            if yr_data["min_temp_c"] is not None
+            else None,
+            "snow_chance_pct": round(snow_chance, 0) if snow_chance is not None else None,
+            "snow_chance_open_meteo_pct": round(om_data["snow_chance_pct"], 0)
+            if om_data["snow_chance_pct"] is not None
+            else None,
+            "snow_chance_yr_pct": round(yr_data["snow_chance_pct"], 0)
+            if yr_data["snow_chance_pct"] is not None
+            else None,
+            "note": " | ".join(note_parts),
+        }
+
+    def _open_meteo_night_data(
+        self, lat: float, lon: float, start: dt.datetime, end: dt.datetime
+    ) -> dict[str, Any]:
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "hourly": "temperature_2m,precipitation_probability,snowfall,weather_code",
+            "timezone": "Europe/Oslo",
+            "start_date": start.date().isoformat(),
+            "end_date": end.date().isoformat(),
+        }
+        url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
+        try:
+            data = self._http_json(url, headers=DEFAULT_HEADERS, timeout=20, retries=2)
+        except Exception as exc:
+            return {
+                "min_temp_c": None,
+                "snow_chance_pct": None,
+                "note": f"Open-Meteo unavailable ({exc.__class__.__name__})",
+            }
+
+        times = data.get("hourly", {}).get("time", [])
+        temps = data.get("hourly", {}).get("temperature_2m", [])
+        precip_prob = data.get("hourly", {}).get("precipitation_probability", [])
+        snowfall = data.get("hourly", {}).get("snowfall", [])
+        weather_code = data.get("hourly", {}).get("weather_code", [])
+
+        temp_values: list[float] = []
+        snow_prob_values: list[float] = []
+        snow_detected_no_prob = False
+
+        for idx, t_str in enumerate(times):
+            ts = dt.datetime.fromisoformat(t_str)
+            if not (start <= ts <= end):
+                continue
+
+            if idx < len(temps) and temps[idx] is not None:
+                temp_values.append(float(temps[idx]))
+
+            pp = None
+            if idx < len(precip_prob) and precip_prob[idx] is not None:
+                pp = float(precip_prob[idx])
+
+            snow_amt = None
+            if idx < len(snowfall) and snowfall[idx] is not None:
+                snow_amt = float(snowfall[idx])
+
+            w_code = None
+            if idx < len(weather_code) and weather_code[idx] is not None:
+                try:
+                    w_code = int(weather_code[idx])
+                except (TypeError, ValueError):
+                    w_code = None
+
+            is_snow = (snow_amt is not None and snow_amt > 0.0) or (
+                w_code is not None and w_code in SNOW_WEATHER_CODES
+            )
+            if is_snow:
+                if pp is not None:
+                    snow_prob_values.append(pp)
+                else:
+                    snow_detected_no_prob = True
+
+        if not temp_values:
+            return {
+                "min_temp_c": None,
+                "snow_chance_pct": None,
+                "note": "Open-Meteo: no hourly values in this window",
+            }
+
+        if snow_prob_values:
+            snow_chance = max(snow_prob_values)
+        elif snow_detected_no_prob:
+            snow_chance = 100.0
+        else:
+            snow_chance = 0.0
+
+        return {"min_temp_c": min(temp_values), "snow_chance_pct": snow_chance, "note": ""}
+
+    def _yr_night_data(self, lat: float, lon: float, start: dt.datetime, end: dt.datetime) -> dict[str, Any]:
+        params = {"lat": f"{lat:.5f}", "lon": f"{lon:.5f}"}
+        url = "https://api.met.no/weatherapi/locationforecast/2.0/compact?" + urllib.parse.urlencode(params)
+        try:
+            data = self._http_json(url, headers=YR_HEADERS, timeout=20, retries=2)
+        except Exception as exc:
+            return {"min_temp_c": None, "snow_chance_pct": None, "note": f"Yr unavailable ({exc.__class__.__name__})"}
+
+        timeseries = data.get("properties", {}).get("timeseries", [])
+        temp_values: list[float] = []
+        symbol_total = 0
+        symbol_snow = 0
+
+        for point in timeseries:
+            t_str = point.get("time")
+            if not t_str:
+                continue
+            try:
+                ts_utc = dt.datetime.fromisoformat(t_str.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            ts_local = ts_utc.astimezone(OSLO_TZ).replace(tzinfo=None)
+            temp = (
+                point.get("data", {})
+                .get("instant", {})
+                .get("details", {})
+                .get("air_temperature")
+            )
+            if not (start <= ts_local <= end):
+                continue
+
+            if temp is not None:
+                temp_values.append(float(temp))
+
+            symbol = (
+                point.get("data", {})
+                .get("next_1_hours", {})
+                .get("summary", {})
+                .get("symbol_code")
+            )
+            if symbol is None:
+                symbol = (
+                    point.get("data", {})
+                    .get("next_6_hours", {})
+                    .get("summary", {})
+                    .get("symbol_code")
+                )
+            if symbol is None:
+                symbol = (
+                    point.get("data", {})
+                    .get("next_12_hours", {})
+                    .get("summary", {})
+                    .get("symbol_code")
+                )
+
+            if symbol:
+                symbol_total += 1
+                if self._is_snow_symbol(str(symbol)):
+                    symbol_snow += 1
+
+        if not temp_values:
+            return {"min_temp_c": None, "snow_chance_pct": None, "note": "Yr: no hourly values in this window"}
+
+        snow_chance = None
+        note = ""
+        if symbol_total > 0:
+            snow_chance = (100.0 * symbol_snow) / symbol_total
+        else:
+            note = "Yr: no precipitation symbols in this window"
+
+        return {"min_temp_c": min(temp_values), "snow_chance_pct": snow_chance, "note": note}
+
+    def _is_snow_symbol(self, symbol_code: str) -> bool:
+        s = symbol_code.lower()
+        return any(token in s for token in SNOW_SYMBOL_KEYWORDS)
+
+
+def night_window(offset_days: int) -> tuple[dt.datetime, dt.datetime]:
+    if offset_days < 0 or offset_days > MAX_NIGHT_OFFSET:
+        raise ValueError(f"offset_days must be in 0..{MAX_NIGHT_OFFSET}")
+    now = dt.datetime.now()
+    start_day = now.date() + dt.timedelta(days=offset_days)
+    start = dt.datetime.combine(start_day, dt.time(hour=22, minute=0))
+    end = start + dt.timedelta(hours=9)
+    return start, end
+
+
+def night_options() -> list[dict[str, Any]]:
+    options: list[dict[str, Any]] = []
+    for offset in range(MAX_NIGHT_OFFSET + 1):
+        start, end = night_window(offset)
+        if offset == 0:
+            base = "Tonight"
+        elif offset == 1:
+            base = "Tomorrow night"
+        else:
+            base = f"{offset} days ahead"
+        options.append(
+            {
+                "offset": offset,
+                "date": start.date().isoformat(),
+                "label": f"{base} ({start:%Y-%m-%d})",
+                "start": start.isoformat(timespec="minutes"),
+                "end": end.isoformat(timespec="minutes"),
+            }
+        )
+    return options
+
+
+def html_page() -> str:
+    option_html = "\n".join(
+        f'          <option value="{opt["offset"]}">{opt["label"]}</option>'
+        for opt in night_options()
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sporveien Night Temperature</title>
+  <style>
+    :root {{
+      --bg: #edf3f7;
+      --card: #ffffff;
+      --ink: #12232f;
+      --muted: #4d6575;
+      --ok: #1f8b4c;
+      --cold: #b11f2e;
+      --unknown: #8a6d1f;
+      --line: #d7e1e8;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at 10% 10%, #ffffff 0%, var(--bg) 45%, #dce8f1 100%);
+    }}
+    .wrap {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+    .panel {{
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
+    }}
+    h1 {{ margin: 0 0 8px; font-size: 1.4rem; }}
+    .muted {{ color: var(--muted); font-size: 0.95rem; }}
+    .controls {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+    select, button {{
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid #b9c9d5;
+      font-size: 0.95rem;
+      background: #fff;
+    }}
+    button {{
+      background: #133b5a;
+      color: #fff;
+      border-color: #133b5a;
+      cursor: pointer;
+    }}
+    .summary {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }}
+    .source {{ margin-top: 8px; }}
+    .source a {{ color: #0f4b78; text-decoration: none; }}
+    .source a:hover {{ text-decoration: underline; }}
+    .chip {{ padding: 8px 10px; border-radius: 999px; font-size: 0.9rem; background: #eef5fa; }}
+    .chip.ok {{ color: var(--ok); }}
+    .chip.cold {{ color: var(--cold); }}
+    .chip.unknown {{ color: var(--unknown); }}
+    .track {{ margin-top: 16px; }}
+    .track h2 {{ margin: 0 0 8px; font-size: 1.1rem; }}
+    table {{ width: 100%; border-collapse: collapse; background: #fff; }}
+    th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; font-size: 0.92rem; }}
+    th {{ background: #f5f9fc; }}
+    .s-ok {{ color: var(--ok); font-weight: 600; }}
+    .s-cold {{ color: var(--cold); font-weight: 700; }}
+    .s-unknown {{ color: var(--unknown); font-weight: 700; }}
+    @media (max-width: 780px) {{
+      .wrap {{ padding: 10px; }}
+      th:nth-child(7), td:nth-child(7), th:nth-child(8), td:nth-child(8), th:nth-child(9), td:nth-child(9), th:nth-child(10), td:nth-child(10) {{ display: none; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>Sporveien: Night Temperature Overview</h1>
+      <div class="muted">Requirement: inspection temperature must be above {THRESHOLD_C:.1f} degC</div>
+      <div class="controls" style="margin-top: 12px;">
+        <label for="nightSelect">Night:</label>
+        <select id="nightSelect">
+{option_html}
+        </select>
+        <button id="refreshBtn">Load forecast</button>
+      </div>
+      <div id="windowInfo" class="muted" style="margin-top:8px;"></div>
+      <div id="summary" class="summary"></div>
+      <div id="sourceInfo" class="muted source"></div>
+    </div>
+    <div id="tracks"></div>
+  </div>
+<script>
+function updateNightSelect(options, selectedOffset) {{
+  const select = document.getElementById('nightSelect');
+  if (!Array.isArray(options) || options.length === 0) return;
+  select.innerHTML = '';
+  for (const opt of options) {{
+    const el = document.createElement('option');
+    el.value = String(opt.offset);
+    el.textContent = opt.label;
+    if (String(opt.offset) === String(selectedOffset)) {{
+      el.selected = true;
+    }}
+    select.appendChild(el);
+  }}
+}}
+
+async function loadForecast() {{
+  const offset = document.getElementById('nightSelect').value;
+  const tracksEl = document.getElementById('tracks');
+  const summaryEl = document.getElementById('summary');
+  const windowEl = document.getElementById('windowInfo');
+  const sourceEl = document.getElementById('sourceInfo');
+  tracksEl.innerHTML = '<div class="panel">Loading forecast...</div>';
+  summaryEl.innerHTML = '';
+  sourceEl.innerHTML = '';
+  try {{
+    const res = await fetch(`/api/forecast?offset=${{encodeURIComponent(offset)}}`);
+    if (!res.ok) throw new Error(`HTTP ${{res.status}}`);
+    const data = await res.json();
+    updateNightSelect(data.night_options, data.night_offset_days);
+
+    windowEl.textContent = `Night date: ${{data.night_date}} | Night window (Europe/Oslo): ${{data.night_start}} -> ${{data.night_end}} | Generated: ${{data.generated_at}}`;
+    summaryEl.innerHTML =
+      `<span class="chip ok">OK: ${{data.summary.ok}}</span>` +
+      `<span class="chip cold">Too cold: ${{data.summary.too_cold}}</span>` +
+      `<span class="chip unknown">Unknown: ${{data.summary.unknown}}</span>`;
+    const srcOm = data.forecast_sources.open_meteo;
+    const srcYr = data.forecast_sources.yr;
+    const srcAlt = data.altitude_source;
+    sourceEl.innerHTML =
+      `Temperature sources:<br>` +
+      `1) <strong>${{srcOm.name}}</strong> (<code>${{srcOm.field}}</code>, ${{srcOm.units}}) from ` +
+      `<a href="${{srcOm.url}}" target="_blank" rel="noopener noreferrer">${{srcOm.url}}</a><br>` +
+      `2) <strong>${{srcYr.name}}</strong> (<code>${{srcYr.field}}</code>, ${{srcYr.units}}) from ` +
+      `<a href="${{srcYr.url}}" target="_blank" rel="noopener noreferrer">${{srcYr.url}}</a><br>` +
+      `Snow chance: maximum of Open-Meteo probability for snow hours and Yr snow-symbol share for the work window.<br>` +
+      `Altitude source: <strong>${{srcAlt.name}}</strong> (<code>${{srcAlt.field}}</code>, ${{srcAlt.units}}) from ` +
+      `<a href="${{srcAlt.url}}" target="_blank" rel="noopener noreferrer">${{srcAlt.url}}</a>`;
+
+    let html = '';
+    for (const track of data.tracks) {{
+      html += `<div class="panel track"><h2>${{track.name}}</h2><table><thead><tr>` +
+              `<th>Station</th><th>Open-Meteo (degC)</th><th>Yr (degC)</th><th>Used min (degC)</th><th>Snow chance (%)</th><th>Status</th><th>Latitude</th><th>Longitude</th><th>Altitude (m)</th><th>Note</th>` +
+              `</tr></thead><tbody>`;
+      for (const s of track.stations) {{
+        const tOm = s.min_temp_open_meteo_c === null ? 'n/a' : s.min_temp_open_meteo_c.toFixed(1);
+        const tYr = s.min_temp_yr_c === null ? 'n/a' : s.min_temp_yr_c.toFixed(1);
+        const tUsed = s.min_temp_c === null ? 'n/a' : s.min_temp_c.toFixed(1);
+        const snow = s.snow_chance_pct === null ? 'n/a' : Math.round(s.snow_chance_pct).toString();
+        const cls = s.status === 'OK' ? 's-ok' : (s.status === 'TOO_COLD' ? 's-cold' : 's-unknown');
+        const lat = s.lat === null ? '' : s.lat.toFixed(5);
+        const lon = s.lon === null ? '' : s.lon.toFixed(5);
+        const elev = s.elevation_m === null ? '' : Math.round(s.elevation_m).toString();
+        html += `<tr><td>${{s.name}}</td><td>${{tOm}}</td><td>${{tYr}}</td><td>${{tUsed}}</td><td>${{snow}}</td><td class="${{cls}}">${{s.status}}</td>` +
+                `<td>${{lat}}</td><td>${{lon}}</td><td>${{elev}}</td><td>${{s.note || ''}}</td></tr>`;
+      }}
+      html += `</tbody></table></div>`;
+    }}
+    tracksEl.innerHTML = html;
+  }} catch (err) {{
+    tracksEl.innerHTML = `<div class="panel" style="color:#b11f2e;">Failed to load forecast: ${{err.message}}</div>`;
+  }}
+}}
+document.getElementById('refreshBtn').addEventListener('click', loadForecast);
+document.getElementById('nightSelect').addEventListener('change', loadForecast);
+window.addEventListener('load', loadForecast);
+</script>
+</body>
+</html>
+"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    store: DataStore | None = None
+
+    def do_GET(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        if path == "/":
+            self._send_html(html_page())
+            return
+        if path == "/api/forecast":
+            self._handle_forecast(parsed.query)
+            return
+        self.send_error(404, "Not found")
+
+    def _handle_forecast(self, query: str) -> None:
+        params = urllib.parse.parse_qs(query)
+        raw_offset = params.get("offset", ["0"])[0]
+        try:
+            offset = int(raw_offset)
+        except ValueError:
+            self._send_json({"error": "offset must be an integer"}, status=400)
+            return
+        if offset < 0 or offset > MAX_NIGHT_OFFSET:
+            self._send_json({"error": f"offset must be in 0..{MAX_NIGHT_OFFSET}"}, status=400)
+            return
+
+        if self.store is None:
+            self._send_json({"error": "Data store not initialized"}, status=500)
+            return
+
+        with self.store.lock:
+            payload = self.store.evaluate_night(offset)
+        self._send_json(payload)
+
+    def _send_html(self, body: str, status: int = 200) -> None:
+        data = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_json(self, obj: dict[str, Any], status: int = 200) -> None:
+        data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Sporveien night temperature dashboard (browser frontend)."
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--xlsx",
+        default=os.environ.get("SPORVEIEN_XLSX", str(DEFAULT_XLSX)),
+        help="Path to Sporveien_inspeksjonsoversikt.xlsx",
+    )
+    args = parser.parse_args()
+
+    xlsx_path = Path(args.xlsx).expanduser().resolve()
+    if not xlsx_path.exists():
+        print(f"Excel file not found: {xlsx_path}")
+        return 1
+
+    try:
+        store = DataStore(xlsx_path)
+    except Exception as exc:
+        print(f"Failed to initialize data from Excel: {exc}")
+        return 1
+
+    Handler.store = store
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Server started on http://{args.host}:{args.port}")
+    print(f"Excel source: {xlsx_path}")
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

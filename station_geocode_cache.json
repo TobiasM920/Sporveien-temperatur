@@ -1,0 +1,614 @@
+{
+  "Bekkestua": {
+    "lat": 59.917322,
+    "lon": 10.590112,
+    "elevation_m": 68.0,
+    "geocode_version": 2
+  },
+  "Ammerud": {
+    "lat": 59.95768,
+    "lon": 10.871752,
+    "elevation_m": 191.0,
+    "geocode_version": 2
+  },
+  "Avløs": {
+    "lat": 59.914026,
+    "lon": 10.550276,
+    "elevation_m": 85.0,
+    "geocode_version": 2
+  },
+  "Berg": {
+    "lat": 59.951481,
+    "lon": 10.744747,
+    "elevation_m": 112.0,
+    "geocode_version": 2
+  },
+  "Bjørnsletta": {
+    "lat": 59.927023,
+    "lon": 10.636729,
+    "elevation_m": 81.0,
+    "geocode_version": 2
+  },
+  "Bergkrystallen": {
+    "lat": 59.866897,
+    "lon": 10.821753,
+    "elevation_m": 166.0,
+    "geocode_version": 2
+  },
+  "Besserud": {
+    "lat": 59.957763,
+    "lon": 10.67387,
+    "elevation_m": 252.0,
+    "geocode_version": 2
+  },
+  "Blindern": {
+    "lat": 59.940205,
+    "lon": 10.716174,
+    "geocode_version": 2,
+    "elevation_m": 83.0
+  },
+  "Bogerud": {
+    "lat": 59.875663,
+    "lon": 10.841956,
+    "geocode_version": 2,
+    "elevation_m": 145.0
+  },
+  "Brattlikollen": {
+    "lat": 59.886574,
+    "lon": 10.800408,
+    "elevation_m": 165.0,
+    "geocode_version": 2
+  },
+  "Brynseng": {
+    "lat": 59.909427,
+    "lon": 10.813497,
+    "elevation_m": 96.0,
+    "geocode_version": 2
+  },
+  "Borgen": {
+    "lat": 59.93464,
+    "lon": 10.696102,
+    "elevation_m": 56.0,
+    "geocode_version": 2
+  },
+  "Bøler": {
+    "lat": 59.883942,
+    "lon": 10.84475,
+    "elevation_m": 153.0,
+    "geocode_version": 2
+  },
+  "Carl Berners plass": {
+    "lat": 59.926144,
+    "lon": 10.7763,
+    "elevation_m": 53.0,
+    "geocode_version": 2
+  },
+  "Eiksmarka": {
+    "lat": 59.947043,
+    "lon": 10.622964,
+    "elevation_m": 140.0,
+    "geocode_version": 2
+  },
+  "Ekraveien": {
+    "lat": 59.950611,
+    "lon": 10.637662,
+    "elevation_m": 140.0,
+    "geocode_version": 2
+  },
+  "Ellingsrudåsen": {
+    "lat": 59.936486,
+    "lon": 10.916859,
+    "elevation_m": 211.0,
+    "geocode_version": 2
+  },
+  "Ensjø": {
+    "lat": 59.914059,
+    "lon": 10.787276,
+    "geocode_version": 2,
+    "elevation_m": 56.0
+  },
+  "Forskningsparken": {
+    "lat": 59.943756,
+    "lon": 10.721023,
+    "elevation_m": 89.0,
+    "geocode_version": 2
+  },
+  "Frognerseteren": {
+    "lat": 59.978602,
+    "lon": 10.676345,
+    "elevation_m": 469.0,
+    "geocode_version": 2
+  },
+  "Frøen": {
+    "lat": 59.934582,
+    "lon": 10.709103,
+    "geocode_version": 2,
+    "elevation_m": 60.0
+  },
+  "Furuset": {
+    "lat": 59.940893,
+    "lon": 10.897515,
+    "geocode_version": 2,
+    "elevation_m": 158.0
+  },
+  "Gaustad": {
+    "lat": 59.946103,
+    "lon": 10.71093,
+    "geocode_version": 2,
+    "elevation_m": 105.0
+  },
+  "Gjettum": {
+    "lat": 59.908516,
+    "lon": 10.530621,
+    "geocode_version": 2,
+    "elevation_m": 97.0
+  },
+  "Gjønnes": {
+    "lat": 59.915056,
+    "lon": 10.580089,
+    "elevation_m": 53.0,
+    "geocode_version": 2
+  },
+  "Godlia": {
+    "lat": 59.907148,
+    "lon": 10.835914,
+    "elevation_m": 131.0,
+    "geocode_version": 2
+  },
+  "Grorud": {
+    "lat": 59.961166,
+    "lon": 10.882537,
+    "geocode_version": 2,
+    "elevation_m": 193.0
+  },
+  "Gråkammen": {
+    "lat": 59.955038,
+    "lon": 10.701613,
+    "elevation_m": 171.0,
+    "geocode_version": 2
+  },
+  "Grønland": {
+    "lat": 59.912806,
+    "lon": 10.760162,
+    "elevation_m": 11.0,
+    "geocode_version": 2
+  },
+  "Gulleråsen": {
+    "lat": 59.955753,
+    "lon": 10.696762,
+    "elevation_m": 183.0,
+    "geocode_version": 2
+  },
+  "Hasle": {
+    "lat": 59.923903,
+    "lon": 10.793032,
+    "geocode_version": 2,
+    "elevation_m": 86.0
+  },
+  "Haslum": {
+    "lat": 59.914994,
+    "lon": 10.563869,
+    "geocode_version": 2,
+    "elevation_m": 72.0
+  },
+  "Hauger": {
+    "lat": 59.910449,
+    "lon": 10.509464,
+    "geocode_version": 2,
+    "elevation_m": 59.0
+  },
+  "Hellerud": {
+    "lat": 59.910298,
+    "lon": 10.830996,
+    "elevation_m": 112.0,
+    "geocode_version": 2
+  },
+  "Helsfyr": {
+    "lat": 59.912673,
+    "lon": 10.801052,
+    "elevation_m": 82.0,
+    "geocode_version": 2
+  },
+  "Holmen": {
+    "lat": 59.946029,
+    "lon": 10.667379,
+    "elevation_m": 125.0,
+    "geocode_version": 2
+  },
+  "Holmenkollen": {
+    "lat": 59.960263,
+    "lon": 10.662881,
+    "elevation_m": 295.0,
+    "geocode_version": 2
+  },
+  "Holstein": {
+    "lat": 59.960666,
+    "lon": 10.739865,
+    "elevation_m": 180.0,
+    "geocode_version": 2
+  },
+  "Haugerud": {
+    "lat": 59.92203,
+    "lon": 10.85475,
+    "geocode_version": 2,
+    "elevation_m": 164.0
+  },
+  "Hovseter": {
+    "lat": 59.946404,
+    "lon": 10.655462,
+    "elevation_m": 138.0,
+    "geocode_version": 2
+  },
+  "Høyenhall": {
+    "lat": 59.9065,
+    "lon": 10.819554,
+    "elevation_m": 95.0,
+    "geocode_version": 2
+  },
+  "Jar": {
+    "lat": 59.925555,
+    "lon": 10.617943,
+    "geocode_version": 2,
+    "elevation_m": 70.0
+  },
+  "Jernbanetorget": {
+    "lat": 59.911898,
+    "lon": 10.75038,
+    "elevation_m": 12.0,
+    "geocode_version": 2
+  },
+  "Kalbakken": {
+    "lat": 59.954565,
+    "lon": 10.8668,
+    "elevation_m": 187.0,
+    "geocode_version": 2
+  },
+  "Karlsrud": {
+    "lat": 59.879726,
+    "lon": 10.805161,
+    "elevation_m": 165.0,
+    "geocode_version": 2
+  },
+  "Kolsås": {
+    "lat": 59.914582,
+    "lon": 10.500843,
+    "geocode_version": 2,
+    "elevation_m": 63.0
+  },
+  "Kringsjå": {
+    "lat": 59.963797,
+    "lon": 10.734689,
+    "elevation_m": 190.0,
+    "geocode_version": 2
+  },
+  "Lambertseter": {
+    "lat": 59.87353,
+    "lon": 10.810273,
+    "geocode_version": 2,
+    "elevation_m": 163.0
+  },
+  "Lijordet": {
+    "lat": 59.941136,
+    "lon": 10.616618,
+    "geocode_version": 2,
+    "elevation_m": 139.0
+  },
+  "Lillevann": {
+    "lat": 59.980583,
+    "lon": 10.652967,
+    "elevation_m": 424.0,
+    "geocode_version": 2
+  },
+  "Lindeberg": {
+    "lat": 59.93292,
+    "lon": 10.881797,
+    "geocode_version": 2,
+    "elevation_m": 163.0
+  },
+  "Linderud": {
+    "lat": 59.94132,
+    "lon": 10.838868,
+    "geocode_version": 2,
+    "elevation_m": 151.0
+  },
+  "Majorstuen": {
+    "lat": 59.929213,
+    "lon": 10.71634,
+    "elevation_m": 57.0,
+    "geocode_version": 2
+  },
+  "Løren": {
+    "lat": 59.929501,
+    "lon": 10.791315,
+    "elevation_m": 109.0,
+    "geocode_version": 2
+  },
+  "Makrellbekken": {
+    "lat": 59.941707,
+    "lon": 10.673722,
+    "elevation_m": 103.0,
+    "geocode_version": 2
+  },
+  "Manglerud": {
+    "lat": 59.897521,
+    "lon": 10.812113,
+    "geocode_version": 2,
+    "elevation_m": 139.0
+  },
+  "Montebello": {
+    "lat": 59.93483,
+    "lon": 10.666415,
+    "geocode_version": 2,
+    "elevation_m": 98.0
+  },
+  "Midtstuen": {
+    "lat": 59.961323,
+    "lon": 10.68302,
+    "geocode_version": 2,
+    "elevation_m": 232.0
+  },
+  "Mortensrud": {
+    "lat": 59.849385,
+    "lon": 10.829376,
+    "elevation_m": 155.0,
+    "geocode_version": 2
+  },
+  "Nationalteateret": {
+    "lat": 59.914994,
+    "lon": 10.7322,
+    "elevation_m": 18.0,
+    "geocode_version": 2
+  },
+  "Munkelia": {
+    "lat": 59.868208,
+    "lon": 10.813143,
+    "elevation_m": 152.0,
+    "geocode_version": 2
+  },
+  "Nationaltheatret": {
+    "lat": 59.914994,
+    "lon": 10.7322,
+    "elevation_m": 18.0,
+    "geocode_version": 2
+  },
+  "Nydalen": {
+    "lat": 59.949063,
+    "lon": 10.766848,
+    "elevation_m": 99.0,
+    "geocode_version": 2
+  },
+  "Oppsal": {
+    "lat": 59.892749,
+    "lon": 10.840609,
+    "geocode_version": 2,
+    "elevation_m": 157.0
+  },
+  "Ris": {
+    "lat": 59.948069,
+    "lon": 10.7046,
+    "elevation_m": 124.0,
+    "geocode_version": 2
+  },
+  "Ringstabekk": {
+    "lat": 59.920146,
+    "lon": 10.604157,
+    "elevation_m": 77.0,
+    "geocode_version": 2
+  },
+  "Risløkka": {
+    "lat": 59.932473,
+    "lon": 10.822987,
+    "geocode_version": 2,
+    "elevation_m": 118.0
+  },
+  "Ryen": {
+    "lat": 59.895516,
+    "lon": 10.804785,
+    "elevation_m": 131.0,
+    "geocode_version": 2
+  },
+  "Røa": {
+    "lat": 59.947382,
+    "lon": 10.643027,
+    "elevation_m": 149.0,
+    "geocode_version": 2
+  },
+  "Romsås": {
+    "lat": 59.962536,
+    "lon": 10.892702,
+    "geocode_version": 2,
+    "elevation_m": 254.0
+  },
+  "Rommen": {
+    "lat": 59.962916,
+    "lon": 10.908651,
+    "elevation_m": 169.0,
+    "geocode_version": 2
+  },
+  "Rødtvet": {
+    "lat": 59.950895,
+    "lon": 10.858333,
+    "elevation_m": 177.0,
+    "geocode_version": 2
+  },
+  "Sinsen": {
+    "lat": 59.936978,
+    "lon": 10.781837,
+    "geocode_version": 2,
+    "elevation_m": 105.0
+  },
+  "Skullerud": {
+    "lat": 59.866685,
+    "lon": 10.840032,
+    "geocode_version": 2,
+    "elevation_m": 135.0
+  },
+  "Skådalen": {
+    "lat": 59.961823,
+    "lon": 10.690739,
+    "elevation_m": 217.0,
+    "geocode_version": 2
+  },
+  "Skogen": {
+    "lat": 59.975188,
+    "lon": 10.647557,
+    "geocode_version": 2,
+    "elevation_m": 382.0
+  },
+  "Skøyenåsen": {
+    "lat": 59.89966,
+    "lon": 10.836596,
+    "elevation_m": 129.0,
+    "geocode_version": 2
+  },
+  "Smestad": {
+    "lat": 59.937306,
+    "lon": 10.684011,
+    "elevation_m": 67.0,
+    "geocode_version": 2
+  },
+  "Slemdal": {
+    "lat": 59.951011,
+    "lon": 10.694123,
+    "elevation_m": 152.0,
+    "geocode_version": 2
+  },
+  "Sognsvann": {
+    "lat": 59.96732,
+    "lon": 10.73375,
+    "elevation_m": 200.0,
+    "geocode_version": 2
+  },
+  "Stortinget": {
+    "lat": 59.913437,
+    "lon": 10.743256,
+    "elevation_m": 33.0,
+    "geocode_version": 2
+  },
+  "Storo": {
+    "lat": 59.94527,
+    "lon": 10.778637,
+    "geocode_version": 2,
+    "elevation_m": 114.0
+  },
+  "Steinerud": {
+    "lat": 59.939141,
+    "lon": 10.704374,
+    "elevation_m": 77.0,
+    "geocode_version": 2
+  },
+  "Stovner": {
+    "lat": 59.961987,
+    "lon": 10.922846,
+    "elevation_m": 180.0,
+    "geocode_version": 2
+  },
+  "Tåsen": {
+    "lat": 59.952802,
+    "lon": 10.751501,
+    "geocode_version": 2,
+    "elevation_m": 129.0
+  },
+  "Tveita": {
+    "lat": 59.913641,
+    "lon": 10.84394,
+    "geocode_version": 2,
+    "elevation_m": 150.0
+  },
+  "Trosterud": {
+    "lat": 59.927175,
+    "lon": 10.865165,
+    "geocode_version": 2,
+    "elevation_m": 148.0
+  },
+  "Tøyen": {
+    "lat": 59.915031,
+    "lon": 10.776247,
+    "geocode_version": 2,
+    "elevation_m": 38.0
+  },
+  "Ullevål stadion": {
+    "lat": 59.947956,
+    "lon": 10.732505,
+    "elevation_m": 99.0,
+    "geocode_version": 2
+  },
+  "Ullernåsen": {
+    "lat": 59.931488,
+    "lon": 10.655979,
+    "elevation_m": 107.0,
+    "geocode_version": 2
+  },
+  "Ulsrud": {
+    "lat": 59.889627,
+    "lon": 10.849372,
+    "geocode_version": 2,
+    "elevation_m": 160.0
+  },
+  "Veitvet": {
+    "lat": 59.94491,
+    "lon": 10.845587,
+    "geocode_version": 2,
+    "elevation_m": 165.0
+  },
+  "Vestli": {
+    "lat": 59.972383,
+    "lon": 10.92887,
+    "elevation_m": 214.0,
+    "geocode_version": 2
+  },
+  "Vettakollen": {
+    "lat": 59.959888,
+    "lon": 10.695705,
+    "elevation_m": 196.0,
+    "geocode_version": 2
+  },
+  "Vinderen": {
+    "lat": 59.942425,
+    "lon": 10.704643,
+    "elevation_m": 88.0,
+    "geocode_version": 2
+  },
+  "Voksenkollen": {
+    "lat": 59.980057,
+    "lon": 10.664729,
+    "elevation_m": 461.0,
+    "geocode_version": 2
+  },
+  "Voksenlia": {
+    "lat": 59.967027,
+    "lon": 10.654611,
+    "elevation_m": 334.0,
+    "geocode_version": 2
+  },
+  "Åsjordet": {
+    "lat": 59.92884,
+    "lon": 10.647613,
+    "elevation_m": 104.0,
+    "geocode_version": 2
+  },
+  "Vollebekk": {
+    "lat": 59.936139,
+    "lon": 10.831954,
+    "geocode_version": 2,
+    "elevation_m": 119.0
+  },
+  "Økern": {
+    "lat": 59.928324,
+    "lon": 10.806609,
+    "elevation_m": 93.0,
+    "geocode_version": 2
+  },
+  "Østerås": {
+    "lat": 59.939461,
+    "lon": 10.608845,
+    "geocode_version": 2,
+    "elevation_m": 135.0
+  },
+  "Østhorn": {
+    "lat": 59.956649,
+    "lon": 10.750155,
+    "elevation_m": 147.0,
+    "geocode_version": 2
+  }
+}
