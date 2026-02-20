@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -770,18 +769,24 @@ def html_page() -> str:
     h1 {{ margin: 0 0 8px; font-size: 1.4rem; }}
     .muted {{ color: var(--muted); font-size: 0.95rem; }}
     .controls {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
-    select, button {{
+    select, input, button {{
       padding: 9px 12px;
       border-radius: 8px;
       border: 1px solid #b9c9d5;
       font-size: 0.95rem;
       background: #fff;
     }}
+    input {{ min-width: 280px; }}
     button {{
       background: #133b5a;
       color: #fff;
       border-color: #133b5a;
       cursor: pointer;
+    }}
+    .btn-secondary {{
+      background: #f5f9fc;
+      color: #133b5a;
+      border-color: #b9c9d5;
     }}
     .summary {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }}
     .source {{ margin-top: 8px; }}
@@ -803,7 +808,7 @@ def html_page() -> str:
     @media (max-width: 780px) {{
       .wrap {{ padding: 10px; }}
       .controls {{ display: grid; grid-template-columns: 1fr; gap: 8px; }}
-      .controls select, .controls button {{ width: 100%; }}
+      .controls select, .controls input, .controls button {{ width: 100%; min-width: 0; }}
       .table-wrap {{ overflow: visible; }}
       table, tbody, tr, td {{ display: block; width: 100%; }}
       thead {{ display: none; }}
@@ -845,6 +850,12 @@ def html_page() -> str:
         </select>
         <button id="refreshBtn">Load forecast</button>
       </div>
+      <div class="controls" style="margin-top: 10px;">
+        <label for="searchInput">Search:</label>
+        <input id="searchInput" type="text" placeholder="Station or track (e.g. Besserud, Holmenkollbanen)" />
+        <button id="clearSearchBtn" type="button" class="btn-secondary">Clear</button>
+      </div>
+      <div id="searchInfo" class="muted" style="margin-top:6px;"></div>
       <div id="windowInfo" class="muted" style="margin-top:8px;"></div>
       <div id="summary" class="summary"></div>
       <div id="sourceInfo" class="muted source"></div>
@@ -852,6 +863,8 @@ def html_page() -> str:
     <div id="tracks"></div>
   </div>
 <script>
+let currentData = null;
+
 function updateNightSelect(options, selectedOffset) {{
   const select = document.getElementById('nightSelect');
   if (!Array.isArray(options) || options.length === 0) return;
@@ -864,6 +877,95 @@ function updateNightSelect(options, selectedOffset) {{
       el.selected = true;
     }}
     select.appendChild(el);
+  }}
+}}
+
+function normalizeText(value) {{
+  if (!value) return '';
+  return String(value)
+    .toLocaleLowerCase('nb-NO')
+    .replace(/æ/g, 'ae')
+    .replace(/ø/g, 'o')
+    .replace(/å/g, 'a')
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}}
+
+function filterTracks(data, query) {{
+  const q = normalizeText(query);
+  let totalStations = 0;
+  for (const track of data.tracks) {{
+    totalStations += track.stations.length;
+  }}
+  if (!q) {{
+    return {{
+      tracks: data.tracks,
+      matchedTracks: data.tracks.length,
+      matchedStations: totalStations,
+      totalStations
+    }};
+  }}
+
+  const out = [];
+  let matchedStations = 0;
+  for (const track of data.tracks) {{
+    const trackMatch = normalizeText(track.name).includes(q);
+    const stations = trackMatch
+      ? track.stations
+      : track.stations.filter((s) => normalizeText(s.name).includes(q));
+    if (stations.length > 0) {{
+      out.push({{ name: track.name, stations }});
+      matchedStations += stations.length;
+    }}
+  }}
+
+  return {{
+    tracks: out,
+    matchedTracks: out.length,
+    matchedStations,
+    totalStations
+  }};
+}}
+
+function renderTracks(trackList) {{
+  const tracksEl = document.getElementById('tracks');
+  let html = '';
+  for (const track of trackList) {{
+    html += `<div class="panel track"><h2>${{track.name}}</h2><div class="table-wrap"><table><thead><tr>` +
+            `<th>Station</th><th>Open-Meteo (degC)</th><th>Yr (degC)</th><th>Used min (degC)</th><th>Snow chance (%)</th><th>Status</th><th>Latitude</th><th>Longitude</th><th>Altitude (m)</th><th>Note</th>` +
+            `</tr></thead><tbody>`;
+    for (const s of track.stations) {{
+      const tOm = s.min_temp_open_meteo_c === null ? 'n/a' : s.min_temp_open_meteo_c.toFixed(1);
+      const tYr = s.min_temp_yr_c === null ? 'n/a' : s.min_temp_yr_c.toFixed(1);
+      const tUsed = s.min_temp_c === null ? 'n/a' : s.min_temp_c.toFixed(1);
+      const snow = s.snow_chance_pct === null ? 'n/a' : Math.round(s.snow_chance_pct).toString();
+      const cls = s.status === 'OK' ? 's-ok' : (s.status === 'TOO_COLD' ? 's-cold' : 's-unknown');
+      const lat = s.lat === null ? '' : s.lat.toFixed(5);
+      const lon = s.lon === null ? '' : s.lon.toFixed(5);
+      const elev = s.elevation_m === null ? '' : Math.round(s.elevation_m).toString();
+      html += `<tr><td data-label="Station">${{s.name}}</td><td data-label="Open-Meteo">${{tOm}}</td><td data-label="Yr">${{tYr}}</td><td data-label="Used min">${{tUsed}}</td><td data-label="Snow chance">${{snow}}</td><td data-label="Status" class="${{cls}}">${{s.status}}</td>` +
+              `<td data-label="Latitude">${{lat}}</td><td data-label="Longitude">${{lon}}</td><td data-label="Altitude">${{elev}}</td><td data-label="Note">${{s.note || ''}}</td></tr>`;
+    }}
+    html += `</tbody></table></div></div>`;
+  }}
+  if (!html) {{
+    tracksEl.innerHTML = '<div class="panel">No stations match your search.</div>';
+    return;
+  }}
+  tracksEl.innerHTML = html;
+}}
+
+function applySearch() {{
+  if (!currentData) return;
+  const query = document.getElementById('searchInput').value;
+  const searchInfoEl = document.getElementById('searchInfo');
+  const filtered = filterTracks(currentData, query);
+  renderTracks(filtered.tracks);
+  if (query.trim()) {{
+    searchInfoEl.textContent = `Search "${{query}}": ${{filtered.matchedStations}} / ${{filtered.totalStations}} stations in ${{filtered.matchedTracks}} track(s).`;
+  }} else {{
+    searchInfoEl.textContent = `Showing all stations: ${{filtered.totalStations}} stations across ${{filtered.matchedTracks}} tracks.`;
   }}
 }}
 
@@ -900,32 +1002,21 @@ async function loadForecast() {{
       `Altitude source: <strong>${{srcAlt.name}}</strong> (<code>${{srcAlt.field}}</code>, ${{srcAlt.units}}) from ` +
       `<a href="${{srcAlt.url}}" target="_blank" rel="noopener noreferrer">${{srcAlt.url}}</a>`;
 
-    let html = '';
-    for (const track of data.tracks) {{
-      html += `<div class="panel track"><h2>${{track.name}}</h2><div class="table-wrap"><table><thead><tr>` +
-              `<th>Station</th><th>Open-Meteo (degC)</th><th>Yr (degC)</th><th>Used min (degC)</th><th>Snow chance (%)</th><th>Status</th><th>Latitude</th><th>Longitude</th><th>Altitude (m)</th><th>Note</th>` +
-              `</tr></thead><tbody>`;
-      for (const s of track.stations) {{
-        const tOm = s.min_temp_open_meteo_c === null ? 'n/a' : s.min_temp_open_meteo_c.toFixed(1);
-        const tYr = s.min_temp_yr_c === null ? 'n/a' : s.min_temp_yr_c.toFixed(1);
-        const tUsed = s.min_temp_c === null ? 'n/a' : s.min_temp_c.toFixed(1);
-        const snow = s.snow_chance_pct === null ? 'n/a' : Math.round(s.snow_chance_pct).toString();
-        const cls = s.status === 'OK' ? 's-ok' : (s.status === 'TOO_COLD' ? 's-cold' : 's-unknown');
-        const lat = s.lat === null ? '' : s.lat.toFixed(5);
-        const lon = s.lon === null ? '' : s.lon.toFixed(5);
-        const elev = s.elevation_m === null ? '' : Math.round(s.elevation_m).toString();
-        html += `<tr><td data-label="Station">${{s.name}}</td><td data-label="Open-Meteo">${{tOm}}</td><td data-label="Yr">${{tYr}}</td><td data-label="Used min">${{tUsed}}</td><td data-label="Snow chance">${{snow}}</td><td data-label="Status" class="${{cls}}">${{s.status}}</td>` +
-                `<td data-label="Latitude">${{lat}}</td><td data-label="Longitude">${{lon}}</td><td data-label="Altitude">${{elev}}</td><td data-label="Note">${{s.note || ''}}</td></tr>`;
-      }}
-      html += `</tbody></table></div></div>`;
-    }}
-    tracksEl.innerHTML = html;
+    currentData = data;
+    applySearch();
   }} catch (err) {{
     tracksEl.innerHTML = `<div class="panel" style="color:#b11f2e;">Failed to load forecast: ${{err.message}}</div>`;
   }}
 }}
 document.getElementById('refreshBtn').addEventListener('click', loadForecast);
 document.getElementById('nightSelect').addEventListener('change', loadForecast);
+document.getElementById('searchInput').addEventListener('input', applySearch);
+document.getElementById('clearSearchBtn').addEventListener('click', () => {{
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  applySearch();
+  input.focus();
+}});
 window.addEventListener('load', loadForecast);
 </script>
 </body>
