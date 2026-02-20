@@ -31,13 +31,13 @@ OPEN_METEO_SOURCE = {
     "name": "Open-Meteo Forecast API",
     "url": "https://api.open-meteo.com/v1/forecast",
     "field": "hourly.temperature_2m",
-    "units": "°C",
+    "units": "&deg;C",
 }
 YR_SOURCE = {
     "name": "Yr / MET Norway Locationforecast",
     "url": "https://api.met.no/weatherapi/locationforecast/2.0/compact",
     "field": "properties.timeseries[].data.instant.details.air_temperature",
-    "units": "°C",
+    "units": "&deg;C",
 }
 FORECAST_SOURCES = {"open_meteo": OPEN_METEO_SOURCE, "yr": YR_SOURCE}
 ALTITUDE_SOURCE = {
@@ -63,13 +63,14 @@ SCRIPT_PATH = Path(__file__).resolve()
 SCRIPT_DIR = SCRIPT_PATH.parent
 DEFAULT_XLSX = SCRIPT_DIR / "SPORVEIEN_XLSX.xlsx"
 CACHE_FILE = SCRIPT_DIR / "station_geocode_cache.json"
+LOGO_FILE = SCRIPT_DIR / "Axess logo.png"
 GEOCODE_CACHE_VERSION = 2
 
 NS_MAIN = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 NS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 NS_PKG_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
 
-CODE_PATTERN = re.compile(r"^[A-ZÆØÅ]\d{3,6}(?:/[A-ZÆØÅ]\d{3,6})?$")
+CODE_PATTERN = re.compile(r"^[A-Z\u00C6\u00D8\u00C5]\d{3,6}(?:/[A-Z\u00C6\u00D8\u00C5]\d{3,6})?$")
 
 
 @dataclass
@@ -742,7 +743,8 @@ def html_page() -> str:
   <title>Sporveien Night Temperature</title>
   <style>
     :root {{
-      --bg: #edf3f7;
+      --bg: #eaf1f6;
+      --bg-soft: #f8fbfe;
       --card: #ffffff;
       --ink: #12232f;
       --muted: #4d6575;
@@ -750,13 +752,15 @@ def html_page() -> str:
       --cold: #b11f2e;
       --unknown: #8a6d1f;
       --line: #d7e1e8;
+      --accent: #133b5a;
+      --accent-soft: #edf4fa;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       font-family: "Segoe UI", Tahoma, sans-serif;
       color: var(--ink);
-      background: radial-gradient(circle at 10% 10%, #ffffff 0%, var(--bg) 45%, #dce8f1 100%);
+      background: radial-gradient(circle at 5% 0%, #ffffff 0%, var(--bg) 40%, #dbe8f3 100%);
     }}
     .wrap {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
     .panel {{
@@ -767,9 +771,45 @@ def html_page() -> str:
       margin-bottom: 14px;
       box-shadow: 0 6px 20px rgba(0, 0, 0, 0.05);
     }}
-    h1 {{ margin: 0 0 8px; font-size: 1.4rem; }}
+    .hero {{
+      background: linear-gradient(145deg, #ffffff 0%, var(--bg-soft) 100%);
+      border-color: #c8dcea;
+      overflow: hidden;
+      position: relative;
+    }}
+    .hero::after {{
+      content: "";
+      position: absolute;
+      right: -90px;
+      top: -90px;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #deecf8 0%, rgba(222, 236, 248, 0) 70%);
+    }}
+    .brand-row {{
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+    }}
+    .brand-logo {{
+      width: 140px;
+      max-width: 38vw;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid #d3e2ee;
+      background: #fff;
+      padding: 8px 10px;
+    }}
+    h1 {{ margin: 0 0 4px; font-size: 1.5rem; line-height: 1.2; }}
+    .subtitle {{ font-size: 0.97rem; }}
+    .meta-line {{ margin-top: 4px; }}
     .muted {{ color: var(--muted); font-size: 0.95rem; }}
+    .controls-block {{ margin-top: 12px; display: grid; gap: 10px; position: relative; z-index: 1; }}
     .controls {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+    label {{ font-weight: 600; color: #28465a; }}
     select, input, button {{
       padding: 9px 12px;
       border-radius: 8px;
@@ -777,23 +817,43 @@ def html_page() -> str:
       font-size: 0.95rem;
       background: #fff;
     }}
-    input {{ min-width: 280px; }}
+    input {{ min-width: 280px; flex: 1; }}
     button {{
-      background: #133b5a;
+      background: var(--accent);
       color: #fff;
-      border-color: #133b5a;
+      border-color: var(--accent);
       cursor: pointer;
     }}
+    button:hover {{ filter: brightness(1.05); }}
     .btn-secondary {{
       background: #f5f9fc;
-      color: #133b5a;
+      color: var(--accent);
       border-color: #b9c9d5;
     }}
-    .summary {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }}
-    .source {{ margin-top: 8px; }}
+    .summary {{
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      margin-top: 12px;
+      position: relative;
+      z-index: 1;
+    }}
+    .source {{ margin-top: 10px; position: relative; z-index: 1; }}
     .source a {{ color: #0f4b78; text-decoration: none; }}
     .source a:hover {{ text-decoration: underline; }}
-    .chip {{ padding: 8px 10px; border-radius: 999px; font-size: 0.9rem; background: #eef5fa; }}
+    .chip {{
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      background: var(--accent-soft);
+      border: 1px solid #d6e5f1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-height: 64px;
+      justify-content: center;
+    }}
+    .chip strong {{ font-size: 1.2rem; line-height: 1; color: var(--ink); }}
     .chip.ok {{ color: var(--ok); }}
     .chip.cold {{ color: var(--cold); }}
     .chip.unknown {{ color: var(--unknown); }}
@@ -803,11 +863,21 @@ def html_page() -> str:
     table {{ width: 100%; border-collapse: collapse; background: #fff; }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 8px; text-align: left; font-size: 0.92rem; }}
     th {{ background: #f5f9fc; }}
+    tbody tr:hover {{ background: #f8fbfe; }}
     .s-ok {{ color: var(--ok); font-weight: 600; }}
     .s-cold {{ color: var(--cold); font-weight: 700; }}
     .s-unknown {{ color: var(--unknown); font-weight: 700; }}
+    @media (max-width: 980px) {{
+      .summary {{ grid-template-columns: repeat(2, minmax(120px, 1fr)); }}
+      .brand-logo {{ width: 120px; }}
+    }}
     @media (max-width: 780px) {{
       .wrap {{ padding: 10px; }}
+      .brand-row {{ align-items: flex-start; }}
+      .brand-logo {{ width: 110px; max-width: 42vw; }}
+      h1 {{ font-size: 1.28rem; }}
+      .summary {{ grid-template-columns: 1fr; }}
+      .controls-block {{ gap: 8px; }}
       .controls {{ display: grid; grid-template-columns: 1fr; gap: 8px; }}
       .controls select, .controls input, .controls button {{ width: 100%; min-width: 0; }}
       .table-wrap {{ overflow: visible; }}
@@ -841,20 +911,28 @@ def html_page() -> str:
 </head>
 <body>
   <div class="wrap">
-    <div class="panel">
-      <h1>Sporveien: Night Temperature Overview</h1>
-      <div class="muted">Requirement: inspection temperature must be above {THRESHOLD_C:.1f} &deg;C</div>
-      <div class="controls" style="margin-top: 12px;">
-        <label for="nightSelect">Night:</label>
-        <select id="nightSelect">
-{option_html}
-        </select>
-        <button id="refreshBtn">Load forecast</button>
+    <div class="panel hero">
+      <div class="brand-row">
+        <img class="brand-logo" src="/assets/axess-logo.png" alt="Axess logo" />
+        <div>
+          <h1>Sporveien Night Temperature</h1>
+          <div class="muted subtitle">Axess planning dashboard for night inspection decisions</div>
+          <div class="muted meta-line">Requirement: inspection temperature must be above {THRESHOLD_C:.1f} &deg;C</div>
+        </div>
       </div>
-      <div class="controls" style="margin-top: 10px;">
-        <label for="searchInput">Search:</label>
-        <input id="searchInput" type="text" placeholder="Station or track (e.g. Besserud, Holmenkollbanen)" />
-        <button id="clearSearchBtn" type="button" class="btn-secondary">Clear</button>
+      <div class="controls-block">
+        <div class="controls">
+          <label for="nightSelect">Night:</label>
+          <select id="nightSelect">
+{option_html}
+          </select>
+          <button id="refreshBtn">Load forecast</button>
+        </div>
+        <div class="controls">
+          <label for="searchInput">Search:</label>
+          <input id="searchInput" type="text" placeholder="Station or track (e.g. Besserud, Holmenkollbanen)" />
+          <button id="clearSearchBtn" type="button" class="btn-secondary">Clear</button>
+        </div>
       </div>
       <div id="searchInfo" class="muted" style="margin-top:6px;"></div>
       <div id="windowInfo" class="muted" style="margin-top:8px;"></div>
@@ -986,10 +1064,12 @@ async function loadForecast() {{
     updateNightSelect(data.night_options, data.night_offset_days);
 
     windowEl.textContent = `Night date: ${{data.night_date}} | Night window (Europe/Oslo): ${{data.night_start}} -> ${{data.night_end}} | Generated: ${{data.generated_at}}`;
+    const stationCount = data.tracks.reduce((acc, t) => acc + t.stations.length, 0);
     summaryEl.innerHTML =
-      `<span class="chip ok">OK: ${{data.summary.ok}}</span>` +
-      `<span class="chip cold">Too cold: ${{data.summary.too_cold}}</span>` +
-      `<span class="chip unknown">Unknown: ${{data.summary.unknown}}</span>`;
+      `<span class="chip"><strong>${{stationCount}}</strong>Total stations</span>` +
+      `<span class="chip ok"><strong>${{data.summary.ok}}</strong>OK stations</span>` +
+      `<span class="chip cold"><strong>${{data.summary.too_cold}}</strong>Too cold</span>` +
+      `<span class="chip unknown"><strong>${{data.summary.unknown}}</strong>Unknown</span>`;
     const srcOm = data.forecast_sources.open_meteo;
     const srcYr = data.forecast_sources.yr;
     const srcAlt = data.altitude_source;
@@ -1034,6 +1114,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             self._send_html(html_page())
             return
+        if path == "/assets/axess-logo.png":
+            self._send_file(LOGO_FILE, "image/png")
+            return
         if path == "/api/forecast":
             self._handle_forecast(parsed.query)
             return
@@ -1063,6 +1146,19 @@ class Handler(BaseHTTPRequestHandler):
         data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _send_file(self, file_path: Path, content_type: str) -> None:
+        try:
+            data = file_path.read_bytes()
+        except OSError:
+            self.send_error(404, f"File not found: {file_path.name}")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
